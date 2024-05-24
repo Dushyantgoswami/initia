@@ -71,9 +71,9 @@ func (h *DefaultProposalHandler) PrepareLaneHandler() blockbase.PrepareLaneHandl
 				continue
 			}
 
-			// If the transaction is too large, we break and do not attempt to include more txs.
+			// If the transaction is too large, we skip it.
 			if updatedSize := totalSize + txInfo.Size; updatedSize > limit.MaxTxBytes {
-				h.lane.Logger().Info(
+				h.lane.Logger().Debug(
 					"failed to select tx for lane; tx bytes above the maximum allowed",
 					"lane", h.lane.Name(),
 					"tx_size", txInfo.Size,
@@ -82,13 +82,16 @@ func (h *DefaultProposalHandler) PrepareLaneHandler() blockbase.PrepareLaneHandl
 					"tx_hash", txInfo.Hash,
 				)
 
-				// TODO: Determine if there is any trade off with breaking or continuing here.
-				break
+				if txInfo.Size > limit.MaxTxBytes {
+					txsToRemove = append(txsToRemove, tx)
+				}
+
+				continue
 			}
 
-			// If the gas limit of the transaction is too large, we break and do not attempt to include more txs.
+			// If the gas limit of the transaction is too large, we skip it.
 			if updatedGas := totalGas + txInfo.GasLimit; updatedGas > limit.MaxGasLimit {
-				h.lane.Logger().Info(
+				h.lane.Logger().Debug(
 					"failed to select tx for lane; gas limit above the maximum allowed",
 					"lane", h.lane.Name(),
 					"tx_gas", txInfo.GasLimit,
@@ -97,7 +100,11 @@ func (h *DefaultProposalHandler) PrepareLaneHandler() blockbase.PrepareLaneHandl
 					"tx_hash", txInfo.Hash,
 				)
 
-				break
+				if txInfo.GasLimit > limit.MaxGasLimit {
+					txsToRemove = append(txsToRemove, tx)
+				}
+
+				continue
 			}
 
 			// Verify the transaction.

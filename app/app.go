@@ -314,6 +314,13 @@ func NewInitiaApp(
 	appOpts servertypes.AppOptions,
 	baseAppOptions ...func(*baseapp.BaseApp),
 ) *InitiaApp {
+	// load the configs
+	mempoolTxs := cast.ToInt(appOpts.Get(server.FlagMempoolMaxTxs))
+	queryGasLimit := cast.ToInt(appOpts.Get(server.FlagQueryGasLimit))
+
+	logger.Info("mempool max txs", "max_txs", mempoolTxs)
+	logger.Info("query gas limit", "gas_limit", queryGasLimit)
+
 	encodingConfig := params.MakeEncodingConfig()
 	std.RegisterLegacyAminoCodec(encodingConfig.Amino)
 	std.RegisterInterfaces(encodingConfig.InterfaceRegistry)
@@ -571,6 +578,7 @@ func NewInitiaApp(
 		runtime.NewKVStoreService(keys[forwardingtypes.StoreKey]),
 		runtime.NewTransientStoreService(tkeys[forwardingtypes.TransientStoreKey]),
 		appheaderinfo.NewHeaderInfoService(),
+		authorityAddr,
 		app.AccountKeeper,
 		app.BankKeeper,
 		app.IBCKeeper.ChannelKeeper,
@@ -1003,7 +1011,7 @@ func NewInitiaApp(
 		Logger:          app.Logger(),
 		TxEncoder:       app.txConfig.TxEncoder(),
 		TxDecoder:       app.txConfig.TxDecoder(),
-		MaxBlockSpace:   math.LegacyMustNewDecFromStr("0.05"),
+		MaxBlockSpace:   math.LegacyMustNewDecFromStr("0.01"),
 		MaxTxs:          1,
 		SignerExtractor: signerExtractor,
 	}, applanes.RejectMatchHandler())
@@ -1013,7 +1021,7 @@ func NewInitiaApp(
 		Logger:          app.Logger(),
 		TxEncoder:       app.txConfig.TxEncoder(),
 		TxDecoder:       app.txConfig.TxDecoder(),
-		MaxBlockSpace:   math.LegacyMustNewDecFromStr("0.15"),
+		MaxBlockSpace:   math.LegacyMustNewDecFromStr("0.09"),
 		MaxTxs:          100,
 		SignerExtractor: signerExtractor,
 	}, factory, factory.MatchHandler())
@@ -1022,7 +1030,7 @@ func NewInitiaApp(
 		Logger:          app.Logger(),
 		TxEncoder:       app.txConfig.TxEncoder(),
 		TxDecoder:       app.txConfig.TxDecoder(),
-		MaxBlockSpace:   math.LegacyMustNewDecFromStr("0.2"),
+		MaxBlockSpace:   math.LegacyMustNewDecFromStr("0.1"),
 		MaxTxs:          100,
 		SignerExtractor: signerExtractor,
 	}, applanes.FreeLaneMatchHandler())
@@ -1031,8 +1039,8 @@ func NewInitiaApp(
 		Logger:          app.Logger(),
 		TxEncoder:       app.txConfig.TxEncoder(),
 		TxDecoder:       app.txConfig.TxDecoder(),
-		MaxBlockSpace:   math.LegacyMustNewDecFromStr("0.6"),
-		MaxTxs:          1000,
+		MaxBlockSpace:   math.LegacyMustNewDecFromStr("0.8"),
+		MaxTxs:          mempoolTxs,
 		SignerExtractor: signerExtractor,
 	})
 
@@ -1046,23 +1054,23 @@ func NewInitiaApp(
 	app.SetMempool(mempool)
 	anteHandler := app.setAnteHandler(mevLane, freeLane)
 
-	// NOTE seems this optional, to reduce mempool logic cost
-	// skip this for now
+	// set the ante handler for each lane for VerifyTx at PrepareLaneHandler
 	//
-	// set the ante handler for each lane
-	//
-	// opt := []blockbase.LaneOption{
-	// 	blockbase.WithAnteHandler(anteHandler),
-	// }
-	// mevLane.WithOptions(
-	// 	opt...,
-	// )
-	// freeLane.(*blockbase.BaseLane).WithOptions(
-	// 	opt...,
-	// )
-	// defaultLane.(*blockbase.BaseLane).WithOptions(
-	// 	opt...,
-	// )
+	opt := []blockbase.LaneOption{
+		blockbase.WithAnteHandler(anteHandler),
+	}
+	systemLane.(*blockbase.BaseLane).WithOptions(
+		opt...,
+	)
+	mevLane.WithOptions(
+		opt...,
+	)
+	freeLane.(*blockbase.BaseLane).WithOptions(
+		opt...,
+	)
+	defaultLane.(*blockbase.BaseLane).WithOptions(
+		opt...,
+	)
 
 	// override the base-app's ABCI methods (CheckTx, PrepareProposal, ProcessProposal)
 	blockProposalHandlers := blockabci.NewProposalHandler(
